@@ -286,9 +286,7 @@ void editorOpen(char *filename) {
                            line[linelen - 1] == '\r'))
       linelen--;
 
-    if (linelen > 0) {
-      editorAppendRow(line, linelen);
-    }
+    editorAppendRow(line, linelen);
   }
   free(line);
   fclose(fp);
