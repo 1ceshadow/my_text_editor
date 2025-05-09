@@ -222,6 +222,7 @@ void editorUpdateRow(erow *row) {
 
   free(row->render);
   row->render = malloc(row->size + tabs*(KANO_TAB_STOP - 1) + 1);
+  if (!row->render) die("malloc");
 
   int idx = 0;
   for (i = 0; i < row->size; i++) {
@@ -229,6 +230,8 @@ void editorUpdateRow(erow *row) {
       row->render[idx++] = ' ';
       // aligns text to the next position each time a tab is encountered.
       while (idx % KANO_TAB_STOP != 0) row->render[idx] = ' ';
+    } else if (iscntrl(row->chars[i])) {
+      row->render[idx++] = '?';
     } else {
       row->render[idx++] = row->chars[i];
     }
@@ -243,6 +246,8 @@ void editorAppendRow(char *s, size_t len) {
   int at = E.numrows;
   E.row[at].size = len;
   E.row[at].chars = malloc(len + 1);
+  if (!E.row[at].chars) die("malloc");
+
   memcpy(E.row[at].chars, s, len);
   E.row[at].chars[len] = '\0';
 
@@ -261,14 +266,29 @@ void editorOpen(char *filename) {
   FILE *fp = fopen(filename, "r");
   if (!fp) die("fopen");
 
+/***
+  // 检测并跳过 UTF-8 BOM
+  unsigned char bom[3];
+  if (fread(bom, 1, 3, fp) == 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF) {
+    // BOM 检测到，文件指针已移动，繼續读取
+  } else {
+    rewind(fp); // 没有 BOM，重置文件指针
+  }
+
+***/
+
   char *line = NULL;
   size_t linecap = 0;
   ssize_t linelen;
   while ((linelen = getline(&line, &linecap, fp)) != -1) {
+    // 修剪行尾的换行符和回车符
     while (linelen > 0 && (line[linelen - 1] == '\n' || 
                            line[linelen - 1] == '\r'))
       linelen--;
-    editorAppendRow(line, linelen);
+
+    if (linelen > 0) {
+      editorAppendRow(line, linelen);
+    }
   }
   free(line);
   fclose(fp);
@@ -325,6 +345,7 @@ void editorDrawRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenrows; y++) {
     int filerow = y + E.rowoff;
+
     if (filerow >= E.numrows) {
       if (E.numrows == 0 && y == E.screenrows / 3) {
         char welcome[80];
@@ -345,11 +366,13 @@ void editorDrawRows(struct abuf *ab) {
       int len = E.row[filerow].rsize - E.coloff;
       if (len < 0) len = 0;
       if (len > E.screencols) len = E.screencols;
-      abAppend(ab, &E.row[filerow].render[E.coloff], len);
+      if (len > 0) {
+        abAppend(ab, &E.row[filerow].render[E.coloff], len);
+      }
     }
 
     abAppend(ab, "\x1b[K", 3);
-    abAppend(ab, "\r\n", 3);
+    abAppend(ab, "\r\n", 2);
   }
 }
 
@@ -390,6 +413,7 @@ void editorRefreshScreen() {
 
   struct abuf ab = ABUF_INIT;
 
+  abAppend(&ab, "\x1b[2J", 4);
   abAppend(&ab, "\x1b[?25l", 6);
   abAppend(&ab, "\x1b[1;1H", 3);
 
